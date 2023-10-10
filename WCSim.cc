@@ -15,7 +15,9 @@
 #include "WCSimStackingAction.hh"
 #include "WCSimTrackingAction.hh"
 #include "WCSimSteppingAction.hh"
+#ifdef G4VIS_USE
 #include "WCSimVisManager.hh"
+#endif
 #include "WCSimRandomParameters.hh"
 
 #ifdef G4UI_USE
@@ -24,6 +26,8 @@
 
 #include <string>
 #include <sstream>
+#include <unistd.h>
+
 
 namespace {     // Anonymous namespace for local helper functions and classes
   enum class WCSimExeMode {Batch, Interactive, Unknown};
@@ -142,8 +146,10 @@ int main(int argc,char** argv)
   runManager->SetUserInitialization(physFactory);
 
   // Visualization
+  #ifdef G4VIS_USE
   G4VisManager* visManager = new WCSimVisManager;
   visManager->Initialize();
+  #endif
 
   // Set user action classes
   WCSimPrimaryGeneratorAction* myGeneratorAction = new 
@@ -197,7 +203,9 @@ int main(int argc,char** argv)
     }
   }
 
+  #ifdef G4VIS_USE
   delete visManager;
+  #endif
 
   delete runManager;
   return 0;
