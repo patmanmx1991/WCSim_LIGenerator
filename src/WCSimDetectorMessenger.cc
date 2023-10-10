@@ -614,6 +614,9 @@ void WCSimDetectorMessenger::SetNewValue(G4UIcommand* command,G4String newValue)
 		} else if ( newValue == "HyperK_HybridmPMT_WithOD") {
 		  WCSimDetector->SetHyperK_HybridmPMT_WithOD_Geometry();
 		  WCSimDetector->SetODEdited(false);
+    } else if ( newValue == "HyperK_HybridmPMT_WithOD_Realistic") {
+		  WCSimDetector->SetHyperK_HybridmPMT_WithOD_Realistic_Geometry();
+		  WCSimDetector->SetODEdited(false);
 		} else if ( newValue == "EggShapedHyperK") {
 		  WCSimDetector->SetIsEggShapedHyperK(true);
 		  WCSimDetector->SetEggShapedHyperKGeometry();

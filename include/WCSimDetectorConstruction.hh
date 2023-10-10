@@ -23,6 +23,9 @@
 #include <unordered_map>     //--> need to fix the "using" and namespace statements
 #include <cmath>
 
+
+#define WCSIM_CHECK_GEOMETRY_OVERLAPS 0
+
 // (JF) We don't need this distinction for DUSEL
 //enum cyl_location {endcap1,wall,endcap2};
 
@@ -85,6 +88,7 @@ public:
   void SetHyperK_HybridmPMT10PCGeometry();//B.Q, 2019/01/26
   void SetHyperK_HybridFakeGeometry();//B.Q, 2019/01/26
   void SetHyperK_HybridmPMT_WithOD_Geometry();
+  void SetHyperK_HybridmPMT_WithOD_Realistic_Geometry();
   void SetNuPrismGeometry(G4String PMTType, G4double PMTCoverage, G4double detectorHeight, G4double detectorDiameter, G4double verticalPosition);
   void SetNuPrism_mPMTGeometry();
   void SetNuPrismBeamTest_mPMTGeometry();
@@ -428,6 +432,8 @@ public:
   void SetBuildODWLSCladding(G4bool val){BuildODWLSCladding = val;}
   G4bool GetODEdited(){return odEdited;}
 
+  G4LogicalVolume* ConstructRealisticPlacement();
+  bool isRealisticPlacement;
   ////////// END OD /////////////
   ///////////////////////////////
 
