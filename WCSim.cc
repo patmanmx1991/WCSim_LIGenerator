@@ -15,19 +15,20 @@
 #include "WCSimStackingAction.hh"
 #include "WCSimTrackingAction.hh"
 #include "WCSimSteppingAction.hh"
-#ifdef G4VIS_USE
 #include "WCSimVisManager.hh"
-#endif
 #include "WCSimRandomParameters.hh"
 
 #ifdef G4UI_USE
 #include "G4UIExecutive.hh"
 #endif
 
+#ifndef DEBUG_RELEASTIC_GEOMETRY
+#define DEBUG_RELEASTIC_GEOMETRY 0
+#endif
+
 #include <string>
 #include <sstream>
 #include <unistd.h>
-
 
 namespace {     // Anonymous namespace for local helper functions and classes
   enum class WCSimExeMode {Batch, Interactive, Unknown};
@@ -145,8 +146,8 @@ int main(int argc,char** argv)
   physFactory->InitializeList();
   runManager->SetUserInitialization(physFactory);
 
-  // Visualization
   #ifdef G4VIS_USE
+  // Visualization
   G4VisManager* visManager = new WCSimVisManager;
   visManager->Initialize();
   #endif
@@ -188,6 +189,13 @@ int main(int argc,char** argv)
 #ifdef G4UI_USE
       // Launch the interactive UI
       G4UIExecutive * ui = new G4UIExecutive(argc,argv);
+      #ifdef G4VIS_USE
+      if(DEBUG_RELEASTIC_GEOMETRY){
+        std::cout << "Executing Starting Init VIS" << std::endl;
+        UI->ApplyCommand(execommand + "init_vis.mac");
+      }
+      #endif
+
       ui->SessionStart();
 
       // Clean it up on exit

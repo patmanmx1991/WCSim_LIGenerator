@@ -39,8 +39,11 @@
 #include "G4NistManager.hh"
 #include "G4AssemblyVolume.hh"
 
+#ifndef DEBUG_RELEASTIC_GEOMETRY
+#define DEBUG_RELEASTIC_GEOMETRY 0
+#endif
 
-struct RelasticPlacementConfiguration {
+struct RealisticPlacementConfiguration {
 
     G4ThreeVector EntireDetectOffset; //< Relative offset for
 
@@ -96,8 +99,17 @@ struct RelasticPlacementConfiguration {
     G4double NRowsPerBottomBlock;
     G4double NBlocksPerRing;
 
+    G4double RowSeperation;
+    int NSpacesInBlock;
+    int NBlocksUp;
+    int NBlocksAround;
+    G4double CellArcLength;
+
 
     void Print(){
+      std::cout << "-----------------------------------" << std::endl;
+      std::cout << "HK FD Detector Configuration Table " << std::endl;
+      std::cout << "-----------------------------------" << std::endl;
       std::cout << "BlackTyvekInnerRadius = " << BlackTyvekInnerRadius << std::endl;
       std::cout << "BlackTyvekOuterRadius = " << BlackTyvekOuterRadius << std::endl;
       std::cout << "DeadSpaceInnerRadius = " << DeadSpaceInnerRadius << std::endl;
@@ -114,7 +126,7 @@ struct RelasticPlacementConfiguration {
 
 };
 
-RelasticPlacementConfiguration config;
+RealisticPlacementConfiguration config;
 
 G4LogicalVolume* BuildAndPlace_SinglePolyhedraTank(
   std::string name,
@@ -127,13 +139,7 @@ G4LogicalVolume* BuildAndPlace_SinglePolyhedraTank(
   G4VisAttributes* vis
 )
 {
-
-  // G4Tubs* solid = new G4Tubs(name,
-  //                             start_radius,
-  //                             end_radius,
-  //                             0.5*full_length,
-  //                             0.*deg,
-  //                             360.*deg);
+  // Helper Function to 
 
   G4double zplane[2] = {-0.5*full_length,0.5*full_length};
   G4double rstart[2] = {start_radius,start_radius};
@@ -171,30 +177,50 @@ G4LogicalVolume* BuildAndPlace_SinglePolyhedraTank(
   return logic;
 }
 
+int CountLogicalChildren(G4LogicalVolume* mother, G4LogicalVolume* children){
+  int n = 0;
+  for (int i = 0; i < mother->GetNoDaughters(); i++){
+      G4VPhysicalVolume* vol = mother->GetDaughter(i);
+      if ( vol->GetLogicalVolume() == children ) { n++; }
+  }
+  return n;
+}
+
 
 G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
 {
   G4cout << "**** Building Realistic HK Placement Detector ****" << G4endl;
-   G4NistManager* nist = G4NistManager::Instance();
+  G4NistManager* nist = G4NistManager::Instance();
 
     // *************************
-    // Legacy WCSim Code
+    // Legacy WCSim Code Translation
     // *************************
     // WCSim has lots of calculations that fill DetectorConstruction Variables
     // To avoid having to search through the structure ALL variables needed 
-    // are contained in the config structure.
+    // are translated to the the config structure at the start.
+    // Future versions should just use hard copies of the config structure.
 
-    // New Configuration Calculation (eventually DB read)
+    // Legacy WCSim Values
     WCLength  = 70*m;
-
     WCIDRadius = 64.8*m/2;
     WCIDHeight = 65.751*m;
     WCODLateralWaterDepth    = 1.*m;
     WCODHeightWaterDepth     = 2.*m;
     WCODDeadSpace            = 600.*mm;
     WCODTyvekSheetThickness  = 1.*mm; // Quite standard I guess
-    WCBlackSheetThickness = 2*mm;
+    WCBlackSheetThickness = 2*mm; // Here this was changed from 2cm, likely a typo in legacy.
 
+
+    // *************************
+    // Configuration Filling
+    // *************************
+
+    config.NSpacesInBlock = 48;
+    config.CellArcLength = 706.84*mm;
+    config.RowSeperation = config.CellArcLength*2;
+    config.NBlocksAround = 6;
+
+    // Now we fill the configuration variables for all volumes
     config.InnerDetectorVis = new G4VisAttributes(true, G4Colour(0.0,0.0,1.0,1.0));
     config.InnerDetectorVis->SetForceSolid(1);
     config.InnerDetectorMaterial = G4Material::GetMaterial("Water");
@@ -203,7 +229,6 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     config.InnerDetectorBarrelLength = WCIDHeight;
 
     config.BlackTyvekVis = new G4VisAttributes(true, G4Colour(0.0,1.0,0.0,1.0));
-    // config.BlackTyvekVis->SetForceWireframe(1);
     config.BlackTyvekVis->SetLineWidth(2);
     config.BlackTyvekVis->SetForceAuxEdgeVisible(0);
     config.BlackTyvekMaterial = G4Material::GetMaterial("Tyvek");
@@ -259,9 +284,14 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
 
     config.Print();
 
-    // Our Hiierarchy is as follows
+    // *************************
+    // Shell Hierarchy Construction
+    // *************************
     G4ThreeVector CENTRAL_POS = G4ThreeVector();
+    G4double twopi = 3.14159*2;
+    G4double pi = 3.14159*2;
 
+    // Our Hierarchy is as follows
     // 1. Rock (WC)
     // - OD WCBarrel 
     // - - White Tyvek Wall
@@ -274,22 +304,25 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     // - - - - - - - Water Inner
     // - - - - - - - - ID PMTs
 
+    // All placements are treated as nested logical volumes to ensure there are no
+    // gaps in the geometry.
+
     // 1. Rock (WC)
     // This is actually a rock solid, moved it instead of air.
     G4LogicalVolume* rockShellLogic = BuildAndPlace_SinglePolyhedraTank(
-      "WC",
+      "WC", // Forced to keep these bad naming conventions?
       0.0,
       config.RockShellRadius,
       config.RockShellLength,
       config.RockShellMaterial,
       CENTRAL_POS,
-      NULL,
+      NULL, // Don't place for now.
       config.RockShellVis
     );
- 
+
     // 2. OD (WCBarrel)
     G4LogicalVolume* MainWaterTankLogic = BuildAndPlace_SinglePolyhedraTank(
-      "WCBarrel",
+      "WCBarrel", // Forced to keep these bad naming conventions?
       0.0,
       config.MainWaterTankRadius,
       config.MainWaterTankLength,
@@ -371,7 +404,7 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
       config.InnerDetectorVis
     );
 
-    // Optionall inner phantom
+    // Optional inner phantom for creating a new logical away from the PMT tracking one
     // G4LogicalVolume* InnerDetectorPhantomLogic = BuildAndPlace_SinglePolyhedraTank(
     //   "InnerDetectorPhantom",
     //   0.0,
@@ -384,97 +417,211 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     // );
 
 
-    G4double twopi = 3.14159*2;
-    G4double pi = 3.14159*2;
+    // *************************
+    // Dummy PMT Construction
+    // *************************
+    // We use construction assembly units to build the detector but 
+    // we need to replace each physical volume with different copyNo
+    // after the placement, so here we create some dummy PMTs that
+    // represent each possible PMT. We place these first using 
+    // assembly volumes as its quicker.
 
     // Temporary PMT Logics to place
     G4Material* pmt_mat = nist->FindOrBuildMaterial("G4_AIR");
-    auto pmt20_solid = new G4Sphere("pmt20",0, 508*mm/2, 0, pi,0,pi);
-    auto pmt20_logic = new G4LogicalVolume(pmt20_solid, pmt_mat, "pmt20");
+    auto pmt20_dummy_solid = new G4Sphere("pmt20",0, 508*mm/2, 0, pi,0,pi);
+    auto pmt20_dummy_logic = new G4LogicalVolume(pmt20_dummy_solid, pmt_mat, "pmt20");
+    G4VisAttributes* pmt20_dummy_colour = new G4VisAttributes(G4Colour(0.0,1.0,0.0));
+    pmt20_dummy_colour->SetForceLineSegmentsPerCircle(12);
+    pmt20_dummy_colour->SetForceAuxEdgeVisible(1);
+    pmt20_dummy_colour->SetForceWireframe(1);
+    pmt20_dummy_colour->SetLineWidth(3);
+    pmt20_dummy_logic->SetVisAttributes(pmt20_dummy_colour);
 
-    auto pmtMulti_solid = new G4Sphere("pmtMulti",0, 508*mm/2, 0, pi,0,pi);
-    auto pmtMulti_logic = new G4LogicalVolume(pmtMulti_solid, pmt_mat, "pmtMulti");
+    auto pmtmulti_dummy_solid = new G4Sphere("pmtMulti",0, 508*mm/2, 0, pi,0,pi);
+    auto pmtmulti_dummy_logic = new G4LogicalVolume(pmtmulti_dummy_solid, pmt_mat, "pmtMulti");
+    G4VisAttributes* pmtmulti_dummy_colour = new G4VisAttributes(G4Colour(1.0,0.0,0.0));
+    pmtmulti_dummy_colour->SetForceLineSegmentsPerCircle(12);
+    pmtmulti_dummy_colour->SetForceAuxEdgeVisible(1);
+    pmtmulti_dummy_colour->SetForceWireframe(1);
+    pmtmulti_dummy_colour->SetLineWidth(3);
+    pmtmulti_dummy_logic->SetVisAttributes(pmtmulti_dummy_colour);
 
-    auto pmtod_solid = new G4Sphere("pmtod",0, 200*mm/2, 0, pi,0,pi);
-    auto pmtod_logic = new G4LogicalVolume(pmtod_solid, pmt_mat, "pmtod");
+    auto pmtod_dummy_solid = new G4Sphere("pmtod",0, 200*mm/2, 0, pi,0,pi);
+    auto pmtod_dummy_logic = new G4LogicalVolume(pmtod_dummy_solid, pmt_mat, "pmtod");
+    G4VisAttributes* pmtod_dummy_colour = new G4VisAttributes(G4Colour(1.0,1.0,0.0));
+    pmtod_dummy_colour->SetForceLineSegmentsPerCircle(12);
+    pmtod_dummy_colour->SetForceAuxEdgeVisible(1);
+    pmtod_dummy_colour->SetForceWireframe(1);
+    pmtod_dummy_colour->SetLineWidth(3);
+    pmtod_dummy_logic->SetVisAttributes(pmtod_dummy_colour);
 
 
-    G4VisAttributes* showColor = new G4VisAttributes(G4Colour(0.0,1.0,0.0));
-    showColor->SetForceLineSegmentsPerCircle(12);
-    showColor->SetForceAuxEdgeVisible(1);
-    showColor->SetForceWireframe(1);
-    showColor->SetLineWidth(3);
+    // *************************
+    // Barrel Assembly Placement
+    // *************************
+    // We have to make several nested assemblies to fill the full detector.
+    // Diagrams of each are kept with their respective components.
+    
+    // The hierarchy of assemblies are.
+    // - Barrel Side/Bottom Block
+    // - - PMT_only_row
+    // - - - PMT_only_two_cell
+    // - - - - pmt_offset_placement
+    // - - PMT_mPMT1_row
+    // - - - PMT_only_two_cell
+    // - - - - pmt_offset_placement
+    // - - - PMT_hybrid_three_cell
+    // - - - - pmt_offset_placement
+    // - - - - multipmt_offset_placement
+    // - - PMT_mPMT2_row
+    // - - - PMT_only_two_cell
+    // - - - - pmt_offset_placement
+    // - - - PMT_hybrid_three_cell
+    // - - - - pmt_offset_placement
+    // - - - - multipmt_offset_placement
 
+    // Six barrel side/bottom blocks are placed rotated around the barrel.
+    // Each PMT_only or PMT_mPMT row has frame cells (possible PMT holes) across.
 
-    G4VisAttributes* showColor2 = new G4VisAttributes(G4Colour(1.0,0.0,0.0));
-    showColor2->SetForceLineSegmentsPerCircle(12);
-    showColor2->SetForceAuxEdgeVisible(1);
-    showColor2->SetForceWireframe(1);
-    showColor2->SetLineWidth(3);
-
-    G4VisAttributes* showColor3 = new G4VisAttributes(G4Colour(1.0,1.0,0.0));
-    showColor3->SetForceLineSegmentsPerCircle(12);
-    showColor3->SetForceAuxEdgeVisible(1);
-    showColor3->SetForceWireframe(1);
-    showColor3->SetLineWidth(3);
-
-    pmt20_logic->SetVisAttributes(showColor);
-    pmtMulti_logic->SetVisAttributes(showColor2);
-    pmtod_logic->SetVisAttributes(showColor3);
-
+    // pmt_offset_placement/multipmt_offset_placement/pmtod_offset_placement
+    // ************************
 
     // First make a single cell assembly, this will put the PMT flush against the wall
+    // Since assembly volumes just expand relative to their center point the means
+    // all nested volumes will also have the PMT againt the tyvek.
     G4double InnerTyvekRadius = config.InnerDetectorOuterRadius;
 
-    auto pmt_cell_assembly = new G4AssemblyVolume();
-    G4RotationMatrix* pmtcentralrotation = new G4RotationMatrix;
-    pmtcentralrotation->rotateZ(180*deg);
-    pmtcentralrotation->rotateY(270*deg);
-    pmtcentralrotation->rotateX(90*deg);
-
+    // Make an assembly volume and rootation vector for a normal pmt
     G4ThreeVector pmt_central_position = G4ThreeVector(InnerTyvekRadius,0.0,0.0);
     G4ThreeVector pmt_central_offset = G4ThreeVector(0.0,0.0,0.0); // -> Can be used for relative offset!
-    pmt_cell_assembly->AddPlacedVolume(pmt20_logic, pmt_central_position, pmtcentralrotation);
+    G4RotationMatrix* pmt_central_rotation = new G4RotationMatrix;
+    pmt_central_rotation->rotateZ(180*deg);
+    pmt_central_rotation->rotateY(270*deg);
+    pmt_central_rotation->rotateX(90*deg);
 
-    auto pmtmulti_cell_assembly = new G4AssemblyVolume();
-    G4RotationMatrix* multipmtcentralrotation = new G4RotationMatrix;
-    multipmtcentralrotation->rotateY(270*deg);
-    multipmtcentralrotation->rotateX(270*deg);
-    pmtmulti_cell_assembly->AddPlacedVolume(pmtMulti_logic, pmt_central_position, multipmtcentralrotation);
+    G4RotationMatrix* multipmt_central_rotation = new G4RotationMatrix;
+    multipmt_central_rotation->rotateY(270*deg);
+    multipmt_central_rotation->rotateX(270*deg);
 
-    auto odpmt_cell_assembly = new G4AssemblyVolume();
-    G4ThreeVector odpmt_central_position = G4ThreeVector(config.WhiteTyvekOuterRadius+5*cm,0.0,0.0);
-    G4RotationMatrix* odpmtcentralrotation = new G4RotationMatrix;
-    odpmtcentralrotation->rotateY(270*deg);
-    odpmt_cell_assembly->AddPlacedVolume(pmtod_logic, odpmt_central_position, odpmtcentralrotation);
+    // For the OD PMT we instead need to make it face outwards from the white tyvek in the OD.
+    G4ThreeVector odpmt_central_position = G4ThreeVector(config.WhiteTyvekOuterRadius+2*cm,0.0,0.0);
+    G4RotationMatrix* pmtod_central_rotation = new G4RotationMatrix;
+    pmtod_central_rotation->rotateY(270*deg);
 
-    G4double RowSeperation = 1.4*m;
+    auto pmt20_offset_placement = new G4AssemblyVolume();
+    pmt20_offset_placement->AddPlacedVolume(pmt20_dummy_logic, pmt_central_position, pmt_central_rotation);
 
-    int NSpacesInBlock = 48;
-    int NSegments = 6*NSpacesInBlock;
-    G4double phi_offset = twopi / NSegments;
+    auto pmtmulti_offset_placement = new G4AssemblyVolume();
+    pmtmulti_offset_placement->AddPlacedVolume(pmtmulti_dummy_logic, pmt_central_position, multipmt_central_rotation);
 
-    G4RotationMatrix* pmtsteprotation = new G4RotationMatrix;
-    G4RotationMatrix* pmtsteprotation2 = new G4RotationMatrix;
-    pmtsteprotation2->rotateZ(-phi_offset/2);
-    pmtsteprotation->rotateZ(phi_offset/2);//align the PMT with the Cell
+    auto pmtod_offset_placement = new G4AssemblyVolume();
+    pmtod_offset_placement->AddPlacedVolume(pmtod_dummy_logic, odpmt_central_position, pmtod_central_rotation);
 
-    G4ThreeVector poslow = G4ThreeVector(0,0.0,-RowSeperation/4);
-    G4ThreeVector posup = G4ThreeVector(0,0.0,RowSeperation/4);
+
+    // PMT_only_two_cell/PMT_hybrid_three_cell/PMT_od_central_cell
+    // ************************
+
+    // Now our job is to make a cell. The following diagrams show locations (#,O,M,F) = (None, 20inch, multiPMT, OD)
+    //
+    // PMT_only_two_cell
+    // _______
+    // |     |
+    // | # O |
+    // |     |
+    // | O # |
+    // _______
+
+    // PMT_hybrid_three_cell
+    // _______
+    // |     |
+    // | # O |
+    // |     |
+    // | O M |
+    // _______
+
+    // PMT_od_central_cell
+    // _______
+    // |     |
+    // | # # |
+    // |     |
+    // | #M# |
+    // _______
+
+    G4double RowSeperation = config.RowSeperation;
+
+    int NSpacesInBlock = config.NSpacesInBlock;
+    int NSegments = config.NBlocksAround * NSpacesInBlock;
+    int NBlocksUp = config.NBlocksUp;
+    G4double phi_offset = twopi / float(NSegments);
+
+    // First we build PMT_only_two_cell
+    G4RotationMatrix* rotation_low = new G4RotationMatrix;
+    G4RotationMatrix* rotation_high = new G4RotationMatrix;
+
+    rotation_high->rotateZ(-phi_offset/2);
+    rotation_low->rotateZ(phi_offset/2);//align the PMT with the Cell
+
+    G4ThreeVector position_low = G4ThreeVector(0,0.0,-RowSeperation/4);
+    G4ThreeVector position_high = G4ThreeVector(0,0.0,RowSeperation/4);
 
     auto frame_block_assembly = new G4AssemblyVolume();
-    frame_block_assembly->AddPlacedAssembly(pmt_cell_assembly, posup, pmtsteprotation  );
-    frame_block_assembly->AddPlacedAssembly(pmt_cell_assembly, poslow, pmtsteprotation2  );
+    frame_block_assembly->AddPlacedAssembly(pmt20_offset_placement, position_high, rotation_high );
+    frame_block_assembly->AddPlacedAssembly(pmt20_offset_placement, position_low, rotation_low  );
 
+    // Then we repeatt but also add mPMT for PMT_hybrid_three_cell
     auto frame_block_assembly_withpmt = new G4AssemblyVolume();  
-    frame_block_assembly_withpmt->AddPlacedAssembly(pmt_cell_assembly, posup, pmtsteprotation  );
-    frame_block_assembly_withpmt->AddPlacedAssembly(pmt_cell_assembly, poslow, pmtsteprotation2  );
-    frame_block_assembly_withpmt->AddPlacedAssembly(pmtmulti_cell_assembly, poslow, pmtsteprotation  );
+    frame_block_assembly_withpmt->AddPlacedAssembly(pmt20_offset_placement, position_high, rotation_high  );
+    frame_block_assembly_withpmt->AddPlacedAssembly(pmt20_offset_placement, position_low, rotation_low  );
+    frame_block_assembly_withpmt->AddPlacedAssembly(pmtmulti_offset_placement, position_low, rotation_high  );
 
+    // Finally we build an OD assembly
     auto frame_block_assembly_odpmt = new G4AssemblyVolume();
     G4RotationMatrix* odsteprotation = new G4RotationMatrix;
     G4ThreeVector posod = G4ThreeVector(0,0.0,-RowSeperation/2);
-    frame_block_assembly_odpmt->AddPlacedAssembly(odpmt_cell_assembly, posod, odsteprotation);
+    frame_block_assembly_odpmt->AddPlacedAssembly(pmtod_offset_placement, posod, odsteprotation);
+
+    // PMT_mPMT1_rows
+    // ************************
+
+    // Now we make the rows. Based on integration diagrams these are:
+    // Main Barrel Block
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#
+
+    // Bottom Barrel Block
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#
+    // #O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O#O
+    // O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#O#OMO#O#O#O#
+
+    // OD Barrel Block
+    // Todo: Add Diagram for OD Barrel Block
+
+    // The blocks above can be split into 3 different types of rows
+    // for both the OD and the ID based on the index that
+    // a specific OD or mPMT is added.
 
     // Make the Three types of block rows
     auto block_row_nomultipmts = new G4AssemblyVolume();
@@ -485,31 +632,44 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     auto block_row_odoffsetindex = new G4AssemblyVolume();
     auto block_row_odfourindex = new G4AssemblyVolume();
 
+    // Everything is still based on the central position
+    // and rotated around the geometry.
+    G4ThreeVector cell_pos = G4ThreeVector(0.0,0.0,0.0);
+    auto cell_block_rotation = new G4RotationMatrix();
 
-    G4ThreeVector poscentral;
-    auto pmtcentralrotation2 = new G4RotationMatrix();
+    // Sweep through angular positions in the row
     for (int i = 0; i < NSpacesInBlock/2; i++){
-      pmtcentralrotation2->rotateZ(phi_offset*2);//align the PMT with the Cell
+      cell_block_rotation->rotateZ(phi_offset*2);
       
-      block_row_nomultipmts->AddPlacedAssembly(frame_block_assembly, poscentral, pmtcentralrotation2);
+      // Simple row only ID pmtt
+      block_row_nomultipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
 
+      // Hybrid mPMT rows for ID index 1
       if ((i-1) % 6 != 0){
-        block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly, poscentral, pmtcentralrotation2);
+        block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
       } else {
-        block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, poscentral, pmtcentralrotation2);
+        block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, cell_pos, cell_block_rotation);
       }
 
+      // Hybrid mPMT rows for ID index 4
       if ((i-4) % 6 != 0){
-        block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly, poscentral, pmtcentralrotation2);
+        block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
       } else {
-        block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, poscentral, pmtcentralrotation2);
+        block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, cell_pos, cell_block_rotation);
       }
 
-      if (i % 2 == 0) block_row_odzeroindex->AddPlacedAssembly(frame_block_assembly_odpmt, poscentral, pmtcentralrotation2);
-      if ((i-3) % 4 == 0) block_row_odoffsetindex->AddPlacedAssembly(frame_block_assembly_odpmt, poscentral, pmtcentralrotation2);
-      if ((i-1) % 4 == 0) block_row_odfourindex->AddPlacedAssembly(frame_block_assembly_odpmt, poscentral, pmtcentralrotation2);
+      // Pattern for OD PMTs
+      if (i % 2 == 0) block_row_odzeroindex->AddPlacedAssembly(frame_block_assembly_odpmt, cell_pos, cell_block_rotation);
+      if ((i-3) % 4 == 0) block_row_odoffsetindex->AddPlacedAssembly(frame_block_assembly_odpmt, cell_pos, cell_block_rotation);
+      if ((i-1) % 4 == 0) block_row_odfourindex->AddPlacedAssembly(frame_block_assembly_odpmt, cell_pos, cell_block_rotation);
 
-   }
+    }
+
+    // Barrel Block Row Placements
+    // ************************
+
+    // Now we have the rows we need to build the final stamper blocks that can be imprinted.
+    // The bottom block is slightly shorter so we need 4 in total.
 
     // Make the barrel block 
     auto block_assembly = new G4AssemblyVolume();
@@ -518,106 +678,58 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     auto odblock_assembly = new G4AssemblyVolume();
     auto odblock_bottom = new G4AssemblyVolume();
 
-    G4RotationMatrix* blockrotation = new G4RotationMatrix();
+    G4RotationMatrix* block_rot = new G4RotationMatrix();
 
+    // Hard coded row choices for 
+    for (int i = 0; i < 8; i++){
+      G4ThreeVector block_pos = G4ThreeVector(0.0,0.0,(-i-0.5)*RowSeperation);
 
-    // Hard coded for now
-    G4ThreeVector block_pos = G4ThreeVector(0.0,0.0,-0.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
+      // ID Block
+      if (i == 0) block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 1) block_assembly->AddPlacedAssembly(block_row_index1multipmts, block_pos, block_rot);
+      if (i == 2) block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 3) block_assembly->AddPlacedAssembly(block_row_index4multipmts, block_pos, block_rot);
+      if (i == 4) block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 5) block_assembly->AddPlacedAssembly(block_row_index1multipmts, block_pos, block_rot);
+      if (i == 6) block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 7) block_assembly->AddPlacedAssembly(block_row_index4multipmts, block_pos, block_rot);
 
-    block_pos = G4ThreeVector(0.0,0.0,-1.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_index1multipmts, block_pos, blockrotation);
+      // ID Bottom Block
+      if (i == 0) block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 1) block_bottom->AddPlacedAssembly(block_row_index1multipmts, block_pos, block_rot);
+      if (i == 2) block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 3) block_bottom->AddPlacedAssembly(block_row_index4multipmts, block_pos, block_rot);
+      if (i == 4) block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, block_rot);
+      if (i == 5) block_bottom->AddPlacedAssembly(block_row_index1multipmts, block_pos, block_rot);
 
-    block_pos = G4ThreeVector(0.0,0.0,-2.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
+      // OD Block
+      if (i == 0) odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 1) odblock_assembly->AddPlacedAssembly(block_row_odoffsetindex, block_pos, block_rot);
+      if (i == 2) odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 3) odblock_assembly->AddPlacedAssembly(block_row_odfourindex, block_pos, block_rot);
+      if (i == 4) odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 5) odblock_assembly->AddPlacedAssembly(block_row_odoffsetindex, block_pos, block_rot);
+      if (i == 6) odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 7) odblock_assembly->AddPlacedAssembly(block_row_odfourindex, block_pos, block_rot);
 
-    block_pos = G4ThreeVector(0.0,0.0,-3.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_index4multipmts, block_pos, blockrotation);
+      // OD Bottom Block
+      if (i == 0) odblock_bottom->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 1) odblock_bottom->AddPlacedAssembly(block_row_odoffsetindex, block_pos, block_rot);
+      if (i == 2) odblock_bottom->AddPlacedAssembly(block_row_odzeroindex, block_pos, block_rot);
+      if (i == 3) odblock_bottom->AddPlacedAssembly(block_row_odfourindex, block_pos, block_rot);
+      if (i == 4) odblock_bottom->AddPlacedAssembly(block_row_odoffsetindex, block_pos, block_rot);
+      if (i == 5) odblock_bottom->AddPlacedAssembly(block_row_odfourindex, block_pos, block_rot);
 
-    block_pos = G4ThreeVector(0.0,0.0,-4.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
+    }
 
-    block_pos = G4ThreeVector(0.0,0.0,-5.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_index1multipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-6.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-7.5*RowSeperation);
-    block_assembly->AddPlacedAssembly(block_row_index4multipmts, block_pos, blockrotation);
-
-
-    // Hard coded for now
-    block_pos = G4ThreeVector(0.0,0.0,-0.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-1.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_index1multipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-2.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-3.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_index4multipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-4.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_nomultipmts, block_pos, blockrotation);
-
-    block_pos = G4ThreeVector(0.0,0.0,-5.5*RowSeperation);
-    block_bottom->AddPlacedAssembly(block_row_index1multipmts, block_pos, blockrotation);
-
-    // OD Block
-    G4ThreeVector odblock_pos = G4ThreeVector(0.0,0.0,-0.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-1.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odoffsetindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-2.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-3.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odfourindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-4.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-5.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odoffsetindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-6.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-7.5*RowSeperation);
-    odblock_assembly->AddPlacedAssembly(block_row_odfourindex, odblock_pos, blockrotation);
-
-     // OD bottom Block
-    odblock_pos = G4ThreeVector(0.0,0.0,-0.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-1.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odoffsetindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-2.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odzeroindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-3.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odfourindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-4.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odoffsetindex, odblock_pos, blockrotation);
-
-    odblock_pos = G4ThreeVector(0.0,0.0,-5.5*RowSeperation);
-    odblock_bottom->AddPlacedAssembly(block_row_odfourindex, odblock_pos, blockrotation);
-
-
-
+    // Final Imprint
+    // ************************
     G4double imprint_spacing = 8*RowSeperation;
 
     // Inprint Columns first then rings
     for (int i = 0; i < 5; i++){
       G4RotationMatrix* imprint_rot = new G4RotationMatrix();
-      G4ThreeVector imprint_pos = G4ThreeVector(0.0,0.0,-i*imprint_spacing + WCIDHeight/2-60*cm);
+      G4ThreeVector imprint_pos = G4ThreeVector(0.0,0.0,-i*imprint_spacing + WCIDHeight/2-70*cm);
       for (int j = 0; j < 6; j++){
         imprint_rot->rotateZ( twopi / 6 );
         block_assembly->MakeImprint(InnerDetectorLogic, imprint_pos, imprint_rot);
@@ -625,90 +737,138 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
       }
     }
 
-    G4RotationMatrix* imprint_rot2 = new G4RotationMatrix();
-    G4ThreeVector imprint_pos2 = G4ThreeVector(0.0,0.0,-5*imprint_spacing + WCIDHeight/2-60*cm);
+    G4RotationMatrix* imprint_rot_bottom = new G4RotationMatrix();
+    G4ThreeVector imprint_pos_bottom = G4ThreeVector(0.0,0.0,-5*imprint_spacing + WCIDHeight/2-60*cm);
     for (int j = 0; j < 6; j++){
-      imprint_rot2->rotateZ( twopi / 6 );
-      block_bottom->MakeImprint(InnerDetectorLogic, imprint_pos2, imprint_rot2);
-      odblock_bottom->MakeImprint(OuterDetectorLogic, imprint_pos2, imprint_rot2);
+      imprint_rot_bottom->rotateZ( twopi / 6 );
+      block_bottom->MakeImprint(InnerDetectorLogic, imprint_pos_bottom, imprint_rot_bottom);
+      odblock_bottom->MakeImprint(OuterDetectorLogic, imprint_pos_bottom, imprint_rot_bottom);
     }
 
+    int pmt20_count_barrel    = CountLogicalChildren(InnerDetectorLogic, pmt20_dummy_logic);
+    int pmtmulti_count_barrel = CountLogicalChildren(InnerDetectorLogic, pmtmulti_dummy_logic);
+    int pmtod_count_barrel    = CountLogicalChildren(OuterDetectorLogic, pmtod_dummy_logic);
+
+    // ------------------------
+    // End Caps
+    // ------------------------
+
     // End Cap Assembly
+    // -----------------
     G4AssemblyVolume* endcap_assembly = new G4AssemblyVolume();
     G4AssemblyVolume* endcap_assembly_od = new G4AssemblyVolume();
 
-    G4double cap_offset_x = 0.52*m;
-    G4double cap_offset_y = 0.52*m;
+    // We place the cap pmts in a grid, with a maximum radial distance
+    G4double cap_offset_x = 706*mm; // Same as barrel PMT spacing
+    G4double cap_offset_y = 706*mm; // Same as barrel PMT spacing
+    G4double edgeminimum = 32322*mm - 220*mm; // Remove expose height from barrel
+
     G4RotationMatrix* endcapmtprotation = new G4RotationMatrix();
     endcapmtprotation->rotateX(180*deg);
 
-    int nplaced = 0;
-    for (int i = -62; i < 63; i++ ){
-      for (int j = -62; j < 63; j++ ){
+    // Add Nested 20inch PMTS first, these are alternating grid pattern
+    for (int i = -100; i < 100; i++ ){
+      for (int j = -100; j < 100; j++ ){
         G4ThreeVector pmtpos = G4ThreeVector( i*cap_offset_x, j*cap_offset_y, 0.0 );
-        if (i % 2 == 0) continue;
-        if (j % 2 == 0) continue;
-        if (pmtpos.mag() > WCIDRadius - 40*cm) continue;
-        nplaced++;
-        endcap_assembly->AddPlacedVolume(pmt20_logic, pmtpos, endcapmtprotation);
+
+        if (i % 2 == 0 and (j-1) % 2 == 0) continue;
+        if (j % 2 == 0 and (i-1) % 2 == 0) continue;
+        if (pmtpos.mag() > edgeminimum) continue;
+
+        endcap_assembly->AddPlacedVolume(pmt20_dummy_logic, pmtpos, endcapmtprotation);
+      }
+    }
+
+    // Add the MultiPMTs, this is quite a complex pattern.
+    for (int i = -100; i < 100; i++ ){
+      for (int j = -100; j < 100; j++ ){
+        G4ThreeVector pmtpos = G4ThreeVector( i*cap_offset_x, j*cap_offset_y, 0.0 );
+
+        if (i % 2 == 1) continue;
+        if (j % 2 == 1) continue;
+
+        if (!(i % 6 == 0 && j % 6 == 0 && !(i % 12 == 0 && j % 12 == 0))) continue;
+
+        if (i == 0 && j % 42 == 0 ) continue;
+        if (j == 0 && i % 42 == 0 ) continue;
+
+        if (pmtpos.mag() > edgeminimum) continue;
+
+        endcap_assembly->AddPlacedVolume(pmtmulti_dummy_logic, pmtpos, endcapmtprotation);
       }
     }
 
     // OD Cap
-    for (int i = -62; i < 63; i++ ){
-      for (int j = -62; j < 63; j++ ){
+    for (int i = -100; i < 100; i++ ){
+      for (int j = -100; j < 100; j++ ){
+
         G4ThreeVector pmtpos = G4ThreeVector( i*cap_offset_x, j*cap_offset_y, 0.0 );
+
         if (!(i % 2 == 0)) continue;
         if (!(j % 3 == 0)) continue;
-        // if (i % 4 == 0 && (j % 6 == 0)) continue;
+
         bool valid = false;
         if ((i % 2 == 0 && ((j-3) % 6 == 0) && ((i) % 4 == 0))) valid = true;
         if ((j % 3 == 0 && ((j) % 6 == 0) && ((i-2) % 4 == 0))) valid = true;
         if (!valid) continue;
-        if (pmtpos.mag() > WCIDRadius - 40*cm) continue;
-        endcap_assembly_od->AddPlacedVolume(pmtod_logic, pmtpos, endcapmtprotation);
+
+        if (pmtpos.mag() > edgeminimum) continue;
+
+        endcap_assembly_od->AddPlacedVolume(pmtod_dummy_logic, pmtpos, endcapmtprotation);
       }
     }
 
-
-    nplaced = 0;
-    for (int i = -62; i < 63; i++ ){
-      for (int j = -62; j < 63; j++ ){
-        G4ThreeVector pmtpos = G4ThreeVector( i*cap_offset_x, j*cap_offset_y, 0.0 );
-        if (i % 2 == 1) continue;
-        if (j % 2 == 1) continue;
-        if (!(i % 6 == 0 && j % 6 == 0 && !(i % 12 == 0 && j % 12 == 0))) continue;
-        if (pmtpos.mag() > WCIDRadius - 40*cm) continue;
-        nplaced++;
-        endcap_assembly->AddPlacedVolume(pmtMulti_logic, pmtpos, endcapmtprotation);
-      }
-    }
-
-    G4ThreeVector topcappos = G4ThreeVector(0.0,0.0,WCIDHeight/2);
+    // Now we can place the end caps, Top first.
+    // -----------------
+    G4ThreeVector topcappos = G4ThreeVector(0.0,0.0,config.InnerDetectorBarrelLength/2);
     G4RotationMatrix* topcaprot = new G4RotationMatrix();
     endcap_assembly->MakeImprint( InnerDetectorLogic, topcappos, topcaprot);
-
-    G4ThreeVector botcappos = G4ThreeVector(0.0,0.0,-WCIDHeight/2);
-    G4RotationMatrix* botcaprot = new G4RotationMatrix();
-    botcaprot->rotateX(180*deg);
-    endcap_assembly->MakeImprint( InnerDetectorLogic, botcappos, botcaprot);
 
     G4ThreeVector topcapposod = G4ThreeVector(0.0,0.0,config.WhiteTyvekBarrelLength/2);
     G4RotationMatrix* topcaprotod = new G4RotationMatrix();
     endcap_assembly_od->MakeImprint( OuterDetectorLogic, topcapposod, topcaprotod);
+
+    int pmt20_count_barrel_and_top    = CountLogicalChildren(InnerDetectorLogic, pmt20_dummy_logic);
+    int pmtmulti_count_barrel_and_top = CountLogicalChildren(InnerDetectorLogic, pmtmulti_dummy_logic);
+    int pmtod_count_barrel_and_top    = CountLogicalChildren(OuterDetectorLogic, pmtod_dummy_logic);
+
+    int pmt20_count_top = pmt20_count_barrel_and_top - pmt20_count_barrel;
+    int pmtmulti_count_top = pmtmulti_count_barrel_and_top - pmtmulti_count_barrel;
+    int pmtod_count_top = pmtod_count_barrel_and_top - pmtod_count_barrel;
+
+
+    // Now cap the oother side
+    // -----------------
+    G4ThreeVector botcappos = G4ThreeVector(0.0,0.0,-config.InnerDetectorBarrelLength/2);
+    G4RotationMatrix* botcaprot = new G4RotationMatrix();
+    botcaprot->rotateX(180*deg);
+    endcap_assembly->MakeImprint( InnerDetectorLogic, botcappos, botcaprot);
 
     G4ThreeVector botcapposod = G4ThreeVector(0.0,0.0,-config.WhiteTyvekBarrelLength/2);
     G4RotationMatrix* botcaprotod = new G4RotationMatrix();
     botcaprotod->rotateX(180*deg);
     endcap_assembly_od->MakeImprint( OuterDetectorLogic, botcapposod, botcaprotod);
 
+    // Do some final sumation
+    int pmt20_count_total    = CountLogicalChildren(InnerDetectorLogic, pmt20_dummy_logic);
+    int pmtmulti_count_total = CountLogicalChildren(InnerDetectorLogic, pmtmulti_dummy_logic);
+    int pmtod_count_total    = CountLogicalChildren(OuterDetectorLogic, pmtod_dummy_logic);
+
+    int pmt20_count_bottom = pmt20_count_total - pmt20_count_barrel_and_top;
+    int pmtmulti_count_bottom = pmtmulti_count_total - pmtmulti_count_barrel_and_top;
+    int pmtod_count_bottom = pmtod_count_total - pmtod_count_barrel_and_top;
+
+    // We are finished with the assembly, check the totals! 
+    std::cout << "" << std::endl;
+    std::cout << "        Barrel  Top  Bottom  Total" << std::endl;
+    std::cout << "IDPMT " << pmt20_count_barrel << " " << pmt20_count_top << " " << pmt20_count_bottom << " " << pmt20_count_total << std::endl;
+    std::cout << "ODPMT " << pmtod_count_barrel << " " << pmtod_count_top << " " << pmtod_count_bottom << " " << pmtod_count_total << std::endl;
+    std::cout << "mPMT  " << pmtmulti_count_barrel << " " << pmtmulti_count_top << " " << pmtmulti_count_bottom << " " << pmtmulti_count_total << std::endl;
+    std::cout << "" << std::endl;
 
     // -------------------------------------
-    // ID PMT Creation (copoied from WCSIM)
+    // ID PMT Creation (copied from WCSIM)
     // -------------------------------------
-    std::cout << "Inner detector has : " << InnerDetectorLogic->GetNoDaughters() << std::endl;
-    std::cout << "Outer detector has : " << OuterDetectorLogic->GetNoDaughters() << std::endl;
-
     G4LogicalVolume* logicWCPMT;
     if(nID_PMTs<=1) logicWCPMT = ConstructPMT(WCPMTName, WCIDCollectionName,"tank",nID_PMTs);
     else logicWCPMT = ConstructMultiPMT(WCPMTName, WCIDCollectionName,"tank",nID_PMTs);
@@ -731,11 +891,18 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     }
 
     G4String pmtname = "WCMultiPMT";
+    logicWCPMT->SetVisAttributes(pmt20_dummy_colour);        
+    logicWCPMT2->SetVisAttributes(pmtmulti_dummy_colour);    
+
 
 
     // -------------------------------------
     // ID PMT Placement
     // -------------------------------------
+    // Now that the dummies are placed, we need to swap them out
+    // for real PMT logicals. This is also needed because copy no
+    // needs to update for each one.
+
     int ndaughters = InnerDetectorLogic->GetNoDaughters();
     int copyno = 1;
     std::vector<G4Transform3D> positions;
@@ -745,27 +912,16 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
       G4VPhysicalVolume* vol = InnerDetectorLogic->GetDaughter(i-removed);
       G4Transform3D aTransform = G4Transform3D(*(vol->GetObjectRotation()), vol->GetObjectTranslation());
 
-      if ( vol->GetLogicalVolume() == pmt20_logic ) {
+      // Skip non-PMTS
+      if (vol->GetLogicalVolume() != pmt20_dummy_logic && vol->GetLogicalVolume() != pmtmulti_dummy_logic) continue;
 
-        new G4PVPlacement(
-            aTransform,
-            logicWCPMT,              // pmt20
-            pmtname,       // its name
-            InnerDetectorLogic,       // its mother volume
-            false,                    // no boolean operations
-            copyno++,
-            false
-        );   
-         
-        InnerDetectorLogic->RemoveDaughter(vol);
-        delete vol;
-        removed++;
+      if (!DEBUG_RELEASTIC_GEOMETRY || copyno < 100){
 
-      } else if ( vol->GetLogicalVolume() == pmtMulti_logic ) {
+        if ( vol->GetLogicalVolume() == pmt20_dummy_logic ) {
 
           new G4PVPlacement(
               aTransform,
-              logicWCPMT2,              // pmt20
+              logicWCPMT,              // pmt20
               pmtname,       // its name
               InnerDetectorLogic,       // its mother volume
               false,                    // no boolean operations
@@ -773,17 +929,37 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
               false
           );   
 
-          logicWCPMT2->SetVisAttributes(showColor2);          
-          InnerDetectorLogic->RemoveDaughter(vol);
-          delete vol;
-          removed++;
+        } else if ( vol->GetLogicalVolume() == pmtmulti_dummy_logic ) {
+
+            new G4PVPlacement(
+                aTransform,
+                logicWCPMT2,              // pmt20
+                pmtname,       // its name
+                InnerDetectorLogic,       // its mother volume
+                false,                    // no boolean operations
+                copyno++,
+                false
+            );   
+    
+        }
+
       }
+
+      InnerDetectorLogic->RemoveDaughter(vol);
+      delete vol;
+      removed++;
+
     }
 
     // -------------------------------------
     // OD PMT Creation and Placement
     // -------------------------------------
+
+    // Reapeat the re-placement for the OD
     logicWCODWLSAndPMT = ConstructPMTAndWLSPlate(WCPMTODName, WCODCollectionName, "OD");
+
+    logicWCODWLSAndPMT->SetVisAttributes(pmtmulti_dummy_colour);        
+
 
     removed = 0;
     ndaughters = OuterDetectorLogic->GetNoDaughters();
@@ -791,43 +967,48 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
       G4VPhysicalVolume* vol = OuterDetectorLogic->GetDaughter(i-removed);
       G4Transform3D aTransform = G4Transform3D(*(vol->GetObjectRotation()), vol->GetObjectTranslation());
 
-      if ( vol->GetLogicalVolume() == pmtod_logic ) {
+      // Skip non-PMTS
+      if (vol->GetLogicalVolume() != pmtod_dummy_logic) continue;
 
-        // if (copyno < 1000){
-        new G4PVPlacement(
-            aTransform,
-            logicWCODWLSAndPMT,              // pmt20
-            "WCBorderCellODContainer",       // its name
-            OuterDetectorLogic,       // its mother volume
-            false,                    // no boolean operations
-            copyno++,
-            false
-        );   
-                
-        OuterDetectorLogic->RemoveDaughter(vol);
-        delete vol;
-        removed++;
+      if (!DEBUG_RELEASTIC_GEOMETRY || copyno < 200){
+
+        if ( vol->GetLogicalVolume() == pmtod_dummy_logic ) {
+
+          new G4PVPlacement(
+              aTransform,
+              logicWCODWLSAndPMT,              // pmt20
+              "WCBorderCellODContainer",       // its name
+              OuterDetectorLogic,       // its mother volume
+              false,                    // no boolean operations
+              copyno++,
+              false
+          );   
+
+        }
 
       }
 
+      OuterDetectorLogic->RemoveDaughter(vol);
+      delete vol;
+      removed++;
     }
-  
+    
+    std::cout << "Final Outer N Daugters : " << OuterDetectorLogic->GetNoDaughters() << std::endl;
+    std::cout << "Final Inner N Daugters : " << InnerDetectorLogic->GetNoDaughters() << std::endl;
+
+
+    // -------------------------------------
     // Optical Surfaces
-    // Main Optical Skin Surfaces are handled inside PMTs themselves.
+    // -------------------------------------
+    // Because we made a nice nested hierarchy above
+    // we only have three surfaces to add to make sure light 
+    // propogation is handled correctly.
     
     // Nested structure means we should just need one skinsurfaces for all the tyveks.
     new G4LogicalSkinSurface("WallTyvekSurface",WallTyvekLogic,OpWaterTySurface);
     new G4LogicalSkinSurface("WhiteTyvekSurface",WhiteTyvekLogic,OpWaterTySurface);
     new G4LogicalSkinSurface("BlackTyvekSurface",BlackTyvekLogic,OpWaterBSSurface);
 
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
-    std::cout << "FINISHED Realistic Placement" << std::endl;
     std::cout << "FINISHED Realistic Placement" << std::endl;
 
     return rockShellLogic;
