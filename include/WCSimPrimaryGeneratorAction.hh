@@ -3,6 +3,7 @@
 
 #include "G4VUserPrimaryGeneratorAction.hh"
 #include "G4ThreeVector.hh"
+#include "G4ParticleDefinition.hh"
 #include "globals.hh"
 
 #include "WCSimRootOptions.hh"
@@ -95,6 +96,7 @@ private:
   G4bool   useLaserEvt;  //T. Akiri: Laser flag
   G4bool   useInjectorEvt; // K.M.Tsui: injector flag
   G4bool   useGPSEvt;
+  G4bool   useDataTableEvt; // J. Fannon: data table flag
   G4bool   useCosmics;
   G4bool   useRadioactiveEvt; // F. Nova: Radioactive flag
   G4bool   useRadonEvt; // G. Pronost: Radon flag
@@ -158,19 +160,25 @@ private:
   TTree* fRooTrackerTree;
   TTree* fSettingsTree;
   NRooTrackerVtx* fTmpRootrackerVtx;
-  float  fNuPrismRadius;
-  float  fNuBeamAng;
-  float  fNuPlanePos[3];
+  float fNuPrismRadius;
+  float fNuBeamAng;
+  float fNuPlanePos[3];
 
 
   // Use Histograms to generate cosmics
-  TH2D *hFluxCosmics;
-  TH2D *hEmeanCosmics;
+  void Create_cosmics_histogram();
+  TH2D *hFluxCosmics  = nullptr;
+  TH2D *hEmeanCosmics = nullptr;
 
   // Set cosmics altitude
   G4double altCosmics;
 
- public:
+  bool needConversion;
+  bool foundConversion;
+  const G4ParticleDefinition * conversionProductParticle[2];
+  G4ThreeVector conversionProductMomentum[2];
+	
+public:
 
   inline void SetMulineEvtGenerator(G4bool choice) { useMulineEvt = choice; }
   inline G4bool IsUsingMulineEvtGenerator() { return useMulineEvt; }
@@ -198,21 +206,27 @@ private:
   inline void SetInjectorOpeningAngle(G4double angle) { openangle = angle;}
   inline void SetInjectorWavelength(G4double wl) { wavelength = wl;}
 
+  inline void SetDataTableEvtGenerator(G4bool choice) {
+    useDataTableEvt = choice;
+  }
+  inline G4bool IsUsingDataTableEvtGenerator() { return useDataTableEvt; }
+
   inline void SetCosmicsGenerator(G4bool choice) { useCosmics = choice; }
   inline G4bool IsUsingCosmicsGenerator()  { return useCosmics; }
 
-  inline void OpenVectorFile(G4String fileName)
+  inline void OpenVectorFile(G4String fileName) 
   {
-    if ( inputFile.is_open() )
-      inputFile.close();
+      if ( inputFile.is_open() ) 
+          inputFile.close();
 
-    vectorFileName = fileName;
-    inputFile.open(vectorFileName, std::fstream::in);
+      vectorFileName = fileName;
+      inputFile.open(vectorFileName, std::fstream::in);
+      
+      if ( !inputFile.is_open() ) {
+        G4cout << "Vector file " << vectorFileName << " not found" << G4endl;
+        exit(-1);
+      }
 
-    if ( !inputFile.is_open() ) {
-      G4cout << "Vector file " << vectorFileName << " not found" << G4endl;
-      exit(-1);
-    }
   }
 
   inline void OpenCosmicsFile(G4String fileName)
@@ -262,6 +276,13 @@ private:
   inline void SetPoissonPMTMean(G4double val){ poissonPMTMean = val; }
   inline G4double GetPoissonPMTMean(){ return poissonPMTMean; }
 
+  inline bool IsConversionFound(){ return foundConversion; }
+  inline void FoundConversion(){ foundConversion = true; }
+  inline void SetConversionProductParticle(int i, const G4ParticleDefinition *p) { conversionProductParticle[i] = p; }
+  inline void SetConversionProductMomentum(int i, const G4ThreeVector& p) { conversionProductMomentum[i] = p; }
+  inline void SetNeedConversion(bool choice) { needConversion = choice; foundConversion = !choice; }
+  inline bool NeedsConversion() { return needConversion; }
+
   //static const HepDouble nanosecond  = 1.;
   //static const HepDouble second      = 1.e+9 *nanosecond;
   //static const HepDouble millisecond = 1.e-3 *second;
@@ -273,11 +294,11 @@ private:
       fTimeUnit=CLHEP::nanosecond;//*second;
     else if(choice == "s" || choice=="second")
       fTimeUnit=CLHEP::second;
-    else if (choice = "ms" || choice=="millisecond")
+    else if (choice == "ms" || choice=="millisecond")
       fTimeUnit=CLHEP::millisecond;
-    else if (choice="microsecond")
+    else if (choice=="microsecond")
       fTimeUnit=CLHEP::microsecond;
-    else if(choice="ps" || choice=="picosecond")
+    else if(choice=="ps" || choice=="picosecond")
       fTimeUnit=CLHEP::picosecond;
     else
       fTimeUnit=CLHEP::nanosecond;

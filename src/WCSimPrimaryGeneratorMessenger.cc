@@ -14,10 +14,10 @@ WCSimPrimaryGeneratorMessenger::WCSimPrimaryGeneratorMessenger(WCSimPrimaryGener
 
   genCmd = new G4UIcmdWithAString("/mygen/generator",this);
   genCmd->SetGuidance("Select primary generator.");
-  genCmd->SetGuidance(" Available generators : muline, gun, laser, gps, cosmics, radioactive, rootracker, radon, injector");
+  genCmd->SetGuidance(" Available generators : muline, gun, laser, gps, datatable, cosmics, radioactive, rootracker, radon, injector, gamma-conversion");
   genCmd->SetParameterName("generator",true);
   genCmd->SetDefaultValue("muline");
-  genCmd->SetCandidates("muline gun laser gps cosmics radioactive rootracker radon injector");
+  genCmd->SetCandidates("muline gun laser gps datatable cosmics radioactive rootracker radon injector, gamma-conversion");
 
   fileNameCmd = new G4UIcmdWithAString("/mygen/vecfile",this);
   fileNameCmd->SetGuidance("Select the file of vectors.");
@@ -145,6 +145,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -157,6 +158,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -169,6 +171,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -181,6 +184,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(true);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -193,6 +197,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(true);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -205,6 +210,21 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(true);
+      myAction->SetDataTableEvtGenerator(false);
+      myAction->SetNeedConversion(false);	    
+      myAction->SetCosmicsGenerator(false);
+      myAction->SetRadioactiveEvtGenerator(false);
+      myAction->SetRadonEvtGenerator(false);
+    }
+    else if (newValue == "datatable")
+    {
+      myAction->SetMulineEvtGenerator(false);
+      myAction->SetGunEvtGenerator(false);
+      myAction->SetRootrackerEvtGenerator(false);
+      myAction->SetLaserEvtGenerator(false);
+      myAction->SetInjectorEvtGenerator(false);
+      myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(true);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -217,6 +237,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(true);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(false);
@@ -229,6 +250,7 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(true);
       myAction->SetRadonEvtGenerator(false);
@@ -241,10 +263,21 @@ void WCSimPrimaryGeneratorMessenger::SetNewValue(G4UIcommand * command,G4String 
       myAction->SetLaserEvtGenerator(false);
       myAction->SetInjectorEvtGenerator(false);
       myAction->SetGPSEvtGenerator(false);
+      myAction->SetDataTableEvtGenerator(false);
       myAction->SetCosmicsGenerator(false);
       myAction->SetRadioactiveEvtGenerator(false);
       myAction->SetRadonEvtGenerator(true);
     }
+    else if ( newValue == "gamma-conversion")
+    {
+      myAction->SetMulineEvtGenerator(false);
+      myAction->SetRootrackerEvtGenerator(false);
+      myAction->SetGunEvtGenerator(false);
+      myAction->SetLaserEvtGenerator(false);
+      myAction->SetGPSEvtGenerator(true);
+      myAction->SetDataTableEvtGenerator(false);
+      myAction->SetNeedConversion(true);
+    }	  
   }
 
   if( command == fileNameCmd)
@@ -366,7 +399,7 @@ G4String WCSimPrimaryGeneratorMessenger::GetCurrentValue(G4UIcommand* command)
     else if(myAction->IsUsingInjectorEvtGenerator())
       { cv = "injector"; }   
     else if(myAction->IsUsingGPSEvtGenerator())
-      { cv = "gps"; }
+       { cv = myAction->NeedsConversion() ? "gamma-conversion" : "gps"; }
     else if(myAction->IsUsingRootrackerEvtGenerator())
       { cv = "rootracker"; }   //M. Scott: Addition of Rootracker events
     else if(myAction->IsUsingCosmicsGenerator())

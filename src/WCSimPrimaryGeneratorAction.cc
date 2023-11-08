@@ -10,7 +10,10 @@
 #include "G4ParticleDefinition.hh"
 #include "G4IonTable.hh"
 #include "G4ThreeVector.hh"
+#include "G4EventManager.hh"
 #include "globals.hh"
+#include <G4Types.hh>
+#include <G4ios.hh>
 #include "Randomize.hh"
 #include <fstream>
 #include <vector>
@@ -96,35 +99,58 @@ WCSimPrimaryGeneratorAction::WCSimPrimaryGeneratorAction(
 
   messenger = new WCSimPrimaryGeneratorMessenger(this);
 
-  useMulineEvt 		= true;
-  useRootrackerEvt 	= false;
-  useGunEvt    		= false;
-  useLaserEvt  		= false;
-  useInjectorEvt  	= false;
-  useGPSEvt    		= false;
-  useCosmics            = false;
-  useRadioactiveEvt  	= false;
-  useRadonEvt        	= false;
+  useMulineEvt         = true;
+  useRootrackerEvt     = false;
+  useGunEvt            = false;
+  useLaserEvt          = false;
+  useInjectorEvt       = false;
+  useGPSEvt            = false;
+  useDataTableEvt      = false;
+  useCosmics           = false;
+  useRadioactiveEvt    = false;
+  useRadonEvt          = false;
 
   //rootracker related variables
   fEvNum = 0;
   fInputRootrackerFile = NULL;
   fNEntries = 1;
+	  
+  needConversion = false;
+  foundConversion = true;	  
 
+  // Radioactive and Radon generator variables:
+  radioactive_sources.clear();
+  myRn222Generator	= 0;
+  fRnScenario		= 0;
+  fRnSymmetry		= 1;
+
+  //injector related variables
+  nPhotons = 1;
+  injectorOnIdx = 0;
+  twindow = 0.;
+  openangle = 0.;
+  wavelength = 435.;
+
+  // Time units for vertices
+  fTimeUnit=CLHEP::nanosecond;
+}
+
+
+void WCSimPrimaryGeneratorAction::Create_cosmics_histogram(){
   // Create the relevant histograms to generate muons
   // according to SuperK flux extrapolated at HyperK site
-  altCosmics = 2*myDC->GetWCIDHeight();
-  G4cout << "altCosmics : " << altCosmics << G4endl;
-  if (inputCosmicsFile.is_open())
-    inputCosmicsFile.close();
 
+  altCosmics = 2*myDetector->GetWCIDHeight();
+  G4cout << "altCosmics : " << altCosmics << G4endl;
+  if (inputCosmicsFile.is_open()) inputCosmicsFile.close();
 
   inputCosmicsFile.open(cosmicsFileName, std::fstream::in);
 
   if (!inputCosmicsFile.is_open()) {
     G4cout << "Cosmics data file " << cosmicsFileName << " not found" << G4endl;
-	exit(-1);
-  } else {
+    exit(-1);
+  } 
+  else {
     G4cout << "Cosmics data file " << cosmicsFileName << " found" << G4endl;
     string line;
     vector<string> token(1);
@@ -166,25 +192,9 @@ WCSimPrimaryGeneratorAction::WCSimPrimaryGeneratorAction(
     hFluxCosmics->Write();
     hEmeanCosmics->Write();
     file->Close();
-
   }
-
-  // Radioactive and Radon generator variables:
-  radioactive_sources.clear();
-  myRn222Generator	= 0;
-  fRnScenario		= 0;
-  fRnSymmetry		= 1;
-
-  //injector related variables
-  nPhotons = 1;
-  injectorOnIdx = 0;
-  twindow = 0.;
-  openangle = 0.;
-  wavelength = 435.;
-
-  // Time units for vertices
-  fTimeUnit=CLHEP::nanosecond;
 }
+
 
 WCSimPrimaryGeneratorAction::~WCSimPrimaryGeneratorAction()
 {
@@ -203,8 +213,10 @@ WCSimPrimaryGeneratorAction::~WCSimPrimaryGeneratorAction()
   delete particleGun;
   delete MyGPS;   //T. Akiri: Delete the GPS variable
   delete messenger;
-  delete hFluxCosmics;
-  delete hEmeanCosmics;
+  if (useCosmics){
+    delete hFluxCosmics;
+    delete hEmeanCosmics;
+  }
 }
 
 void WCSimPrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
@@ -773,6 +785,41 @@ void WCSimPrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
       particleGun->SetParticleDefinition(particleTable->FindParticle(particleName="e-"));
       //particleGun->SetParticleEnergy();
 #endif
+      
+      if(needConversion) {
+          G4PrimaryParticle *primaryParticle = anEvent->GetPrimaryVertex(0)->GetPrimary(0);
+          G4ThreeVector tmpDir(1, 0, 0);
+          G4ThreeVector tmpPos(0, 0, 0);
+          particleGun->SetParticleDefinition(primaryParticle->GetG4code());
+          particleGun->SetParticleEnergy(primaryParticle->GetKineticEnergy());
+          particleGun->SetParticlePosition(tmpPos);
+          particleGun->SetParticleMomentumDirection(tmpDir);
+          foundConversion = false;
+          while (!foundConversion) {
+              G4Event *tmpEvent = new G4Event(-1);
+              particleGun->GeneratePrimaryVertex(tmpEvent);
+              G4EventManager::GetEventManager()->ProcessOneEvent(tmpEvent);
+              delete tmpEvent;
+          }
+          G4ThreeVector newDir = primaryParticle->GetMomentumDirection();
+          if (!newDir.isParallel(tmpDir, 1e-5)) {
+              G4ThreeVector rotationAxis = tmpDir.cross(newDir);
+              rotationAxis = rotationAxis / rotationAxis.mag();
+              double rotationAngle = acos(newDir.dot(tmpDir));
+              for (int i = 0; i < 2; i++) {
+                  conversionProductMomentum[i].rotate(rotationAngle, rotationAxis);
+              }
+          }
+          primaryParticle->SetParticleDefinition(conversionProductParticle[0]);
+          primaryParticle->SetMomentum(conversionProductMomentum[0].getX(),
+                                       conversionProductMomentum[0].getY(),
+                                       conversionProductMomentum[0].getZ());
+          G4PrimaryParticle *secondProduct = new G4PrimaryParticle(conversionProductParticle[1],
+                                                                   conversionProductMomentum[1].getX(),
+                                                                   conversionProductMomentum[1].getY(),
+                                                                   conversionProductMomentum[1].getZ());
+          anEvent->GetPrimaryVertex(0)->SetPrimary(secondProduct);
+      }	  
     }
   else if (useRadonEvt)
     { //G. Pronost: Add Radon (adaptation of Radioactive event)
@@ -866,8 +913,120 @@ void WCSimPrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
       	*/
       }
 
+    } else if (useDataTableEvt) {
+    // Setup local variables to store the data table values
+    G4int index;
+    G4int pdgid;
+    G4double ene;
+    G4ThreeVector pos;
+    G4ThreeVector dir;
+    G4double t;
+
+    // Check if the input file is open
+    if (!inputFile.is_open()) {
+      G4cout << "Error: Input file is not open" << G4endl;
+      G4cout << "Set a vector file using the command /mygen/vecfile <FILENAME>"
+             << G4endl;
+      exit(-1);
     }
-  else if(useCosmics){
+
+    // Flag for first event
+    G4bool firstParticle = true;
+
+    // Line position before the next particle
+    std::streampos lastLinePos;
+
+    // Counter for the number of particles per event
+    G4int nParticles = 0;
+
+    // Read the data table
+    std::string line;
+
+    // Skip any lines that start with a #
+    while (std::getline(inputFile, line)) {
+      if (line.empty() || line[0] == '#') {
+        continue;
+      }
+
+      // If we've reached the end of the file before beamOn events have been reached then we need to stop
+      if (inputFile.eof()) {
+        G4cout << "End of datatable file - run terminated..." << G4endl;
+        G4RunManager::GetRunManager()->AbortRun();
+      }
+
+      if(nParticles > MAX_N_VERTICES){
+        G4cout << "CANNOT DEAL WITH MORE THAN " << MAX_N_VERTICES << " VERTICES" << G4endl;
+        exit(-1);
+      }
+
+      // Buffer to convert between string and other variables
+      std::istringstream buffer(line);
+
+      // Load information into local variables
+      buffer >> index >> pdgid >> ene >> pos[0] >> pos[1] >> pos[2] >> dir[0] >>
+          dir[1] >> dir[2] >> t;
+
+      // We've reached the end of the event N that we're generating and have also read the first line of event
+      // N + 1. We need to rewind to the start of event N + 1 so that the first particle of N + 1 is not missed when
+      // this function is called again for the next event.
+      if (index == 0 && firstParticle == false) {
+        // Go back a line
+        inputFile.seekg(lastLinePos);
+        break;
+      }
+
+      // Buffer the position of the current line in the file
+      lastLinePos = inputFile.tellg();
+
+      // Set values to save to output
+      SetBeamEnergy(ene, nParticles);
+      SetBeamDir(dir, nParticles);
+      SetBeamPDG(pdgid, nParticles);
+      SetVtxs(nParticles, pos);
+
+      nParticles++;
+
+      // Print out the first three particles in the event to be generated
+      if (index < 3) {
+        // Use the kinetic energy, not total
+        G4cout << G4endl
+               << "=====================================================\n"
+               << "Generating particle " << index << " with id = " << pdgid
+               << "\n    with kinetic energy = " << ene
+               << "\n    MeV, position = " << pos[0] << ", " << pos[1] << ", "
+               << pos[2] << ",\n    and direction = " << dir[0] << ", "
+               << dir[1] << ", " << dir[2]
+               << "\n====================================================="
+               << G4endl;
+      }
+
+      // No longer on the first particle
+      firstParticle = false;
+
+      // Set the particle gun
+      // Particle type
+      particleGun->SetParticleDefinition(particleTable->FindParticle(pdgid));
+      // Position
+      particleGun->SetParticlePosition(pos);
+      // Direction
+      particleGun->SetParticleMomentumDirection(dir);
+      // Energy
+      particleGun->SetParticleEnergy(ene);
+      // Time
+      particleGun->SetParticleTime(t);
+      // Set the event
+      particleGun->GeneratePrimaryVertex(anEvent);
+    }
+
+    G4cout << "Number of particles generated for this event: " << nParticles << G4endl;
+
+    // Set the number of particles in this event
+    SetNvtxs(nParticles);
+
+  } else if (useCosmics) {
+
+    if (hFluxCosmics == nullptr) 
+      Create_cosmics_histogram();
 
     //////////////////
     // DEBUG PRINTS
@@ -1121,86 +1280,7 @@ void WCSimPrimaryGeneratorAction::GeneratePrimaries(G4Event* anEvent)
       }
 
     }
-  else if (useRadonEvt)
-    { //G. Pronost: Add Radon (adaptation of Radioactive event)
-
-      // Currently only one generator is possible
-      // In order to have several, we need to find a solution for the fitting graphes (which are static currently)
-      // Idea: array of fitting graphes? (each new generators having a specific ID)
-      if ( !myRn222Generator ) {
-      	myRn222Generator = new WCSimGenerator_Radioactivity(myDetector);
-      	myRn222Generator->Configuration(fRnScenario);
-      }
-
-      //G4cout << " Generate radon events " << G4endl;
-      // initialize GPS properties
-      MyGPS->ClearAll();
-
-      MyGPS->SetMultipleVertex(true);
-
-
-      std::vector<struct radioactive_source>::iterator it;
-
-      G4String IsotopeName = "Rn222";
-      G4double IsotopeActivity = myRn222Generator->GetMeanActivity() * 1e-3; // mBq to Bq
-      G4double iEventAvg = IsotopeActivity * GetRadioactiveTimeWindow();
-
-      //G4cout << " Average " << iEventAvg << G4endl;
-      // random poisson number of vertices based on average
-      int n_vertices = CLHEP::RandPoisson::shoot(iEventAvg);
-
-      if ( n_vertices < 1 ) {
-      	 n_vertices = 1;
-      }
-
-      for(int u=0; u<n_vertices; u++){
-
-	MyGPS->AddaSource(1.);
-	MyGPS->SetCurrentSourceto(MyGPS->GetNumberofSource() - 1);
-
-	// Bi214 (source of electron in Rn222 decay chain, assumed to be in equilibrium)
-	MyGPS->SetParticleDefinition(G4IonTable::GetIonTable()->GetIon( 83, 214, 0));
-
-	// Get position (first position take few seconds to be produced, there after there is no trouble)
-	//G4cout << "GetRandomVertex" << G4endl;
-	G4ThreeVector position = myRn222Generator->GetRandomVertex(fRnSymmetry);
-	//G4cout << "Done: " << position << G4endl;
-	// energy
-	MyGPS->GetCurrentSource()->GetEneDist()->SetEnergyDisType("Mono");
-	MyGPS->GetCurrentSource()->GetEneDist()->SetMonoEnergy(0.);
-
-	// position
-	MyGPS->GetCurrentSource()->GetPosDist()->SetPosDisType("Point");
-	MyGPS->GetCurrentSource()->GetPosDist()->SetCentreCoords(position);
-
-	//G4cout << u << " is " << IsotopeName << " loc " << position  << G4endl;
-
-      }
-      G4int number_of_sources = MyGPS->GetNumberofSource();
-
-      // this will generate several primary vertices
-      MyGPS->GeneratePrimaryVertex(anEvent);
-
-      SetNvtxs(number_of_sources);
-      for( G4int u=0; u<number_of_sources; u++){
-	targetpdgs[u] = 2212; //ie. proton
-
-      	G4ThreeVector P   =anEvent->GetPrimaryVertex(u)->GetPrimary()->GetMomentum();
-      	G4ThreeVector vtx =anEvent->GetPrimaryVertex(u)->GetPosition();
-      	G4int pdg         =anEvent->GetPrimaryVertex(u)->GetPrimary()->GetPDGcode();
-
-      	//       G4ThreeVector dir  = P.unit();
-      	G4double E         = std::sqrt((P.dot(P)));
-
-	//G4cout << " vertex " << u << " of " << number_of_sources << " (" << vtx.x() << ", " << vtx.y() << ", " << vtx.z() << ") with pdg: " << pdg << G4endl;
-
-      	SetVtxs(u,vtx);
-      	SetBeamEnergy(E,u);
-      	//       SetBeamDir(dir);
-      	SetBeamPDG(pdg,u);
-      }
-
-    }
+  
 }
 
 void WCSimPrimaryGeneratorAction::SaveOptionsToOutput(WCSimRootOptions * wcopt)

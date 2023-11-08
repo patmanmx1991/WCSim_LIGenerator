@@ -1,4 +1,36 @@
-This file contains the release notes for each version of WCSim. Release notes can also be found at https://github.com/WCSim/WCSim/tags. 
+This file contains the release notes for each version of WCSim. Release notes can also be found at https://github.com/WCSim/WCSim/tags.
+
+*************************************************************
+19/09/2023: Notes for v1.12.1
+*************************************************************
+
+Minor release to update the reference validation plots after #375
+
+Updates
+* Pull request [WCSim/WCSim#375 @kmtsui](https://github.com/WCSim/WCSim/pull/375): Improved WCTE mPMT geometry. Causes some minor changes to physics output for other mPMT geometries, due to a 0.0 to -0.0 precision issue
+* Pull request [WCSim/WCSim#376 @tdealtry](https://github.com/WCSim/WCSim/pull/376): Don't fall back to automated geometry building when using invalid PMT position file
+
+Bug fixes
+* Pull request [WCSim/WCSim#371 @guiguem](https://github.com/WCSim/WCSim/pull/371): Resolve cmake linkage issue
+
+*************************************************************
+21/08/2023: Notes for v1.12.0
+*************************************************************
+
+Main change is to reactivate the new WCTE geometry
+
+New features
+* Pull Request [WCSim/WCSim#370 @kmtsui](https://github.com/WCSim/WCSim/pull/370): Save extra information (position, time, kinetic energy) as trajectories pass the blacksheet/tyvek/cave wall
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add new as-built WCTE geometry
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add gamma conversion generator (simulates e+/e- pair with correct kinematics at the position you specify)
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add new optional photocathode models that improve the description of photons interacting with the photocathode glass
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add ability to specify PMT placement via a file of PMT positions/orientations, rather than using the usual WCSim automated placement
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add ability to fluctuate PMT placement based on a Gaussian
+* Pull Request [WCSim/WCSim#353 @kmtsui](https://github.com/WCSim/WCSim/pull/353): Add ability to rotate the cap PMT placement by half a barrel column, in order to be able to replicate the real WCTE geometry
+
+Updates
+* Pull Request [WCSim/WCSim#359 @P3tru](https://github.com/WCSim/WCSim/pull/359): Remove dependence on `ext/functional` header. Should allow easier compilation on macOS
+* Pull Request [WCSim/WCSim#359 @P3tru](https://github.com/WCSim/WCSim/pull/359): Template `ComparisonPassed()` functions
 
 *************************************************************
 03/08/2023: Notes for v1.11.1
