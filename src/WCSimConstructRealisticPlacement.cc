@@ -645,14 +645,16 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
       block_row_nomultipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
 
       // Hybrid mPMT rows for ID index 1
-      if ((i-1) % 6 != 0){
+      // if ((i-1) % 6 != 0){
+      if (i % 2 == 0){
         block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
       } else {
         block_row_index1multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, cell_pos, cell_block_rotation);
       }
 
       // Hybrid mPMT rows for ID index 4
-      if ((i-4) % 6 != 0){
+      // if ((i-4) % 6 != 0){
+      if ((i-1) % 2 == 0){
         block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly, cell_pos, cell_block_rotation);
       } else {
         block_row_index4multipmts->AddPlacedAssembly(frame_block_assembly_withpmt, cell_pos, cell_block_rotation);
