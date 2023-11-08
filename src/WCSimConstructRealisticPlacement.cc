@@ -273,7 +273,7 @@ G4LogicalVolume* WCSimDetectorConstruction::ConstructRealisticPlacement()
     config.MainWaterTankMaterial = G4Material::GetMaterial("Water");
 
     config.RockShellVis = new G4VisAttributes(false, G4Colour(0.5,0.5,1.0,0.1));
-    config.RockShellMaterial = G4Material::GetMaterial("Water");
+    config.RockShellMaterial = G4Material::GetMaterial("Rock");
     config.RockShellRadius = config.MainWaterTankRadius + 30*cm;
     config.RockShellLength = config.MainWaterTankLength + 30*cm;
 
